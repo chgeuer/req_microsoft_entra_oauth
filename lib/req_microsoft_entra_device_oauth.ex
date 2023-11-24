@@ -3,11 +3,10 @@ defmodule ReqMicrosoftEntraDeviceOAuth do
 
   @supported_options [:azure_token_cache_fs_path, :tenant_id, :scope]
 
-  @default_tenant "common"
-
   @entra_endpoint "https://login.microsoftonline.com"
 
-  @default_scope "https://management.azure.com/.default"
+  # @default_tenant "common"
+  # @default_scope "https://management.azure.com/.default"
 
   @moduledoc """
   `Req` plugin for Microsoft Entra ID device flow authentication.
@@ -34,7 +33,7 @@ defmodule ReqMicrosoftEntraDeviceOAuth do
   end
 
   defp auth(request) do
-    opts = request.options
+    opts = request.options 
     token = read_memory_cache() || read_fs_cache(opts) || request_token(opts)
     Req.Request.put_header(request, "Authorization", "Bearer #{token}")
   end
@@ -77,9 +76,9 @@ defmodule ReqMicrosoftEntraDeviceOAuth do
     token
   end
 
-  def request_token(opts) do
-    scope =
-      case Keyword.get(opts, :scope, @default_scope) do
+  def request_token(%{ tenant_id: tenant_id, scope: scope } = opts) do
+    scope_val = 
+      case scope do
         :arm -> "https://management.azure.com/.default"
         :storage -> "https://storage.azure.com/.default"
         :keyvault -> "https://vault.azure.net/.default"
@@ -87,12 +86,10 @@ defmodule ReqMicrosoftEntraDeviceOAuth do
         x -> x
       end
 
-    tenant_id = Keyword.get(opts, :tenant_id, @default_tenant)
-
     client_id = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
 
     device_code_url = "#{@entra_endpoint}/#{tenant_id}/oauth2/v2.0/devicecode"
-    result = Req.post!(device_code_url, form: [client_id: client_id, scope: scope]).body
+    result = Req.post!(device_code_url, form: [client_id: client_id, scope: scope_val]).body
 
     device_code = result["device_code"]
     user_code = result["user_code"]
