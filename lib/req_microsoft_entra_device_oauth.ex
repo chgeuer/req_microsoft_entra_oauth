@@ -1,9 +1,11 @@
 defmodule ReqMicrosoftEntraDeviceOAuth do
   require Logger
 
-  @supported_options [:azure_token_cache_fs_path, :tenant_id, :scope]
+  @supported_options [:microsoft_entra_token_cache_fs_path, :tenant_id, :scope]
 
   @entra_endpoint "https://login.microsoftonline.com"
+
+  @client_id "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
 
   # @default_tenant "common"
   # @default_scope "https://management.azure.com/.default"
@@ -29,7 +31,7 @@ defmodule ReqMicrosoftEntraDeviceOAuth do
     request
     |> Req.Request.register_options(@supported_options)
     |> Req.Request.merge_options(opts)
-    |> Req.Request.append_request_steps(req_azure_device_oauth: &auth/1)
+    |> Req.Request.append_request_steps(req_microsoft_entra_device_oauth: &auth/1)
   end
 
   defp auth(request) do
@@ -61,7 +63,7 @@ defmodule ReqMicrosoftEntraDeviceOAuth do
 
   defp token_fs_path(opts) do
     Path.join(
-      opts[:azure_token_cache_fs_path] || :filename.basedir(:user_config, "req_microsoft_entra_oauth"),
+      opts[:microsoft_entra_token_cache_fs_path] || :filename.basedir(:user_config, "req_microsoft_entra_oauth"),
       "devicetoken"
     )
   end
@@ -86,10 +88,8 @@ defmodule ReqMicrosoftEntraDeviceOAuth do
         x -> x
       end
 
-    client_id = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
-
     device_code_url = "#{@entra_endpoint}/#{tenant_id}/oauth2/v2.0/devicecode"
-    result = Req.post!(device_code_url, form: [client_id: client_id, scope: scope_val]).body
+    result = Req.post!(device_code_url, form: [client_id: @client_id, scope: scope_val]).body
 
     device_code = result["device_code"]
     user_code = result["user_code"]
@@ -112,7 +112,7 @@ defmodule ReqMicrosoftEntraDeviceOAuth do
 
     token_url = "#{@entra_endpoint}/#{tenant_id}/oauth2/v2.0/token"
     params = [
-      client_id: client_id,
+      client_id: @client_id,
       device_code: device_code,
       grant_type: "urn:ietf:params:oauth:grant-type:device_code"
     ]
