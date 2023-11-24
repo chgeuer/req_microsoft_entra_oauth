@@ -61,7 +61,7 @@ defmodule ReqMicrosoftEntraDeviceOAuth do
 
   defp auth(request) do
     opts = request.options
-    token = read_memory_cache() || read_fs_cache(opts) || request_token(opts)
+    token = read_cached(opts) || request_token(opts)
     Req.Request.put_header(request, "Authorization", "Bearer #{token}")
   end
 
@@ -87,10 +87,15 @@ defmodule ReqMicrosoftEntraDeviceOAuth do
   end
 
   defp token_fs_path(opts) do
-    Path.join(
+    Path.join([
       opts[:microsoft_entra_token_cache_fs_path] || :filename.basedir(:user_config, "req_microsoft_entra_oauth"),
+      opts[:tenant_id],
       "devicetoken"
-    )
+    ])
+  end
+
+  def read_cached(opts) do
+    read_memory_cache() || read_fs_cache(opts)
   end
 
   defp write_fs_cache(token, opts) do
@@ -133,7 +138,7 @@ defmodule ReqMicrosoftEntraDeviceOAuth do
       grant_type: "urn:ietf:params:oauth:grant-type:device_code"
     ]
 
-    token = attempt(token_url, params, sleep_duration_ms)
+    token = poll_token_using_devicecode(token_url, params, sleep_duration_ms)
     write_memory_cache(token)
     write_fs_cache(token, opts)
     token
@@ -148,14 +153,14 @@ defmodule ReqMicrosoftEntraDeviceOAuth do
       end
   end
 
-  defp attempt(token_url, params, sleep_duration_ms) do
+  defp poll_token_using_devicecode(token_url, params, sleep_duration_ms) do
     result =
       Req.post!(token_url, form: params).body
 
     if result["error"] do
       Logger.info(["response: ", result["error"]])
       Process.sleep(sleep_duration_ms)
-      attempt(token_url, params, sleep_duration_ms)
+      poll_token_using_devicecode(token_url, params, sleep_duration_ms)
     else
       Logger.info("response: success")
       result["access_token"]
