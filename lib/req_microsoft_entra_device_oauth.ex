@@ -7,8 +7,8 @@ defmodule ReqMicrosoftEntraDeviceOAuth do
 
   @client_id "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
 
-  # @default_tenant "common"
-  # @default_scope "https://management.azure.com/.default"
+  @default_tenant_id "common"
+  @default_scope "https://management.azure.com/.default"
 
   @moduledoc """
   `Req` plugin for Microsoft Entra ID device flow authentication.
@@ -19,23 +19,48 @@ defmodule ReqMicrosoftEntraDeviceOAuth do
 
   ## Examples
 
-      req = 
+      req =
         Req.new(http_errors: :raise)
         |> ReqMicrosoftEntraDeviceOAuth.attach(
-          tenant_id: "contoso.onmicrosoft.com", 
+          tenant_id: "contoso.onmicrosoft.com",
           scope: :keyvault)
-      
+
       Req.get!(req, url: "https://api.github.com/user").body
   """
   def attach(request, opts \\ []) do
+    opts =
+      opts
+      |> enrich_scope()
+      |> enrich_tenant_id()
+
     request
     |> Req.Request.register_options(@supported_options)
     |> Req.Request.merge_options(opts)
     |> Req.Request.append_request_steps(req_microsoft_entra_device_oauth: &auth/1)
   end
 
+  defp enrich_scope(opts) do
+    scope =
+      case Keyword.get(opts, :scope, @default_scope) do
+        :arm -> "https://management.azure.com/.default"
+        :storage -> "https://storage.azure.com/.default"
+        :keyvault -> "https://vault.azure.net/.default"
+        :graph -> "https://graph.microsoft.com/.default"
+        x when is_atom(x) -> raise "unknown scope: #{inspect(x)}"
+        x -> x
+      end
+
+    Keyword.put(opts, :scope, scope)
+  end
+
+  defp enrich_tenant_id(opts) do
+    tenant_id = Keyword.get(opts, :tenant_id, @default_tenant_id)
+
+    Keyword.put(opts, :tenant_id, tenant_id)
+  end
+
   defp auth(request) do
-    opts = request.options 
+    opts = request.options
     token = read_memory_cache() || read_fs_cache(opts) || request_token(opts)
     Req.Request.put_header(request, "Authorization", "Bearer #{token}")
   end
@@ -79,17 +104,8 @@ defmodule ReqMicrosoftEntraDeviceOAuth do
   end
 
   def request_token(%{ tenant_id: tenant_id, scope: scope } = opts) do
-    scope_val = 
-      case scope do
-        :arm -> "https://management.azure.com/.default"
-        :storage -> "https://storage.azure.com/.default"
-        :keyvault -> "https://vault.azure.net/.default"
-        :graph -> "https://graph.microsoft.com/.default"
-        x -> x
-      end
-
     device_code_url = "#{@entra_endpoint}/#{tenant_id}/oauth2/v2.0/devicecode"
-    result = Req.post!(device_code_url, form: [client_id: @client_id, scope: scope_val]).body
+    result = Req.post!(device_code_url, form: [client_id: @client_id, scope: scope]).body
 
     device_code = result["device_code"]
     user_code = result["user_code"]
@@ -133,7 +149,7 @@ defmodule ReqMicrosoftEntraDeviceOAuth do
   end
 
   defp attempt(token_url, params, sleep_duration_ms) do
-    result = 
+    result =
       Req.post!(token_url, form: params).body
 
     if result["error"] do
